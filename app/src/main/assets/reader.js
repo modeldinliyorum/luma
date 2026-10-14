@@ -1,8 +1,22 @@
-// Luma EPUB highlighter. Re-applies saved highlights by text match.
+// Luma EPUB helpers: highlight re-application and Compatibility Mode detection.
 (function () {
     if (window.lumaSetHighlights) return;
 
     var DEFAULT_COLOR = "rgba(245,197,24,0.400)";
+
+    function parseColor(value) {
+        if (!value) return null;
+        var match = value.match(/rgba?\(([^)]+)\)/);
+        if (!match) return null;
+        var parts = match[1].split(",").map(function (p) { return parseFloat(p.trim()); });
+        if (parts.length === 4 && parts[3] === 0) return null; // transparent
+        if (parts.length >= 3) return [parts[0], parts[1], parts[2]];
+        return null;
+    }
+
+    function luminance(rgb) {
+        return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+    }
 
     window.lumaSetHighlights = function (marks) {
         try {
@@ -49,6 +63,30 @@
             });
         } catch (e) {
             // Never let highlighting break the reading surface.
+        }
+    };
+
+    // Inverts the page only when it is dark text on a light background.
+    window.lumaApplyCompatibility = function (on) {
+        try {
+            var root = document.documentElement;
+            if (!on) {
+                root.classList.remove("luma-compat");
+                return;
+            }
+            var bodyStyle = window.getComputedStyle(document.body);
+            var rootStyle = window.getComputedStyle(root);
+            var bg = parseColor(bodyStyle.backgroundColor) ||
+                parseColor(rootStyle.backgroundColor) ||
+                [255, 255, 255];
+            var fg = parseColor(bodyStyle.color) || [0, 0, 0];
+            if (luminance(bg) >= 0.5 && luminance(fg) < 0.5) {
+                root.classList.add("luma-compat");
+            } else {
+                root.classList.remove("luma-compat");
+            }
+        } catch (e) {
+            // Leave the page untouched if anything goes wrong.
         }
     };
 })();

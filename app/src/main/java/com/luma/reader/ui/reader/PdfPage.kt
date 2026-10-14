@@ -3,6 +3,8 @@ package com.luma.reader.ui.reader
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -23,6 +25,7 @@ fun PdfPageContent(
     highlights: List<Highlight>,
     penMode: Boolean,
     color: Int,
+    compatibility: Boolean,
     ensureRendered: (Int) -> Unit,
     onStroke: (List<Pair<Float, Float>>) -> Unit,
     modifier: Modifier = Modifier
@@ -33,6 +36,7 @@ fun PdfPageContent(
         highlights = highlights,
         penMode = penMode,
         color = color,
+        compatibility = compatibility,
         onStroke = onStroke,
         modifier = modifier
     )
@@ -44,6 +48,7 @@ fun PdfPage(
     highlights: List<Highlight>,
     penMode: Boolean,
     color: Int,
+    compatibility: Boolean,
     onStroke: (List<Pair<Float, Float>>) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -52,7 +57,7 @@ fun PdfPage(
         factory = { context -> PdfCanvasView(context).also { it.onStroke = onStroke } },
         update = { view ->
             view.onStroke = onStroke
-            view.setContent(bitmap, highlights, penMode, color)
+            view.setContent(bitmap, highlights, penMode, color, compatibility)
         }
     )
 }
@@ -61,6 +66,9 @@ fun PdfPage(
  * Draws the current page bitmap and overlays saved pen strokes. While pen mode
  * is on a drag paints a freehand stroke and the touch is consumed. While it is
  * off the view does not consume touches, so the pager swipe can change pages.
+ *
+ * In Compatibility Mode a page that is predominantly light is drawn through an
+ * inverting colour filter, turning black-on-white into white-on-black.
  */
 class PdfCanvasView(context: Context) : View(context) {
 
@@ -68,9 +76,22 @@ class PdfCanvasView(context: Context) : View(context) {
     private var highlights: List<Highlight> = emptyList()
     private var penMode = false
     private var strokeColor = 0xFFF5C518.toInt()
+    private var compatibility = false
     var onStroke: ((List<Pair<Float, Float>>) -> Unit)? = null
 
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val invertPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = ColorMatrixColorFilter(
+            ColorMatrix(
+                floatArrayOf(
+                    -1f, 0f, 0f, 0f, 255f,
+                    0f, -1f, 0f, 0f, 255f,
+                    0f, 0f, -1f, 0f, 255f,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+        )
+    }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
@@ -80,7 +101,23 @@ class PdfCanvasView(context: Context) : View(context) {
     private val dest = RectF()
     private val live = mutableListOf<Pair<Float, Float>>()
 
-    fun setContent(newBitmap: Bitmap?, newHighlights: List<Highlight>, pen: Boolean, color: Int) {
+    private var analyzedBitmap: Bitmap? = null
+    private var analyzedCompatibility = false
+    private var pageIsLight = false
+
+    fun setContent(
+        newBitmap: Bitmap?,
+        newHighlights: List<Highlight>,
+        pen: Boolean,
+        color: Int,
+        compat: Boolean
+    ) {
+        if (newBitmap !== analyzedBitmap || compat != analyzedCompatibility) {
+            analyzedBitmap = newBitmap
+            analyzedCompatibility = compat
+            pageIsLight = compat && newBitmap != null && isLightPage(newBitmap)
+        }
+        compatibility = compat
         bitmap = newBitmap
         highlights = newHighlights
         penMode = pen
@@ -108,7 +145,8 @@ class PdfCanvasView(context: Context) : View(context) {
         super.onDraw(canvas)
         val bmp = bitmap ?: return
         computeDest()
-        canvas.drawBitmap(bmp, null, dest, bitmapPaint)
+        val paint = if (compatibility && pageIsLight) invertPaint else bitmapPaint
+        canvas.drawBitmap(bmp, null, dest, paint)
 
         highlights.forEach { highlight ->
             val encoded = highlight.stroke
@@ -169,5 +207,27 @@ class PdfCanvasView(context: Context) : View(context) {
         val w = dest.width().coerceAtLeast(1f)
         val h = dest.height().coerceAtLeast(1f)
         return ((x - dest.left) / w).coerceIn(0f, 1f) to ((y - dest.top) / h).coerceIn(0f, 1f)
+    }
+
+    /** True when most sampled pixels are light, i.e. black text on a white page. */
+    private fun isLightPage(bmp: Bitmap): Boolean {
+        val step = 24
+        var light = 0
+        var total = 0
+        var y = 0
+        while (y < bmp.height) {
+            var x = 0
+            while (x < bmp.width) {
+                val color = bmp.getPixel(x, y)
+                val luminance = 0.299f * ((color shr 16) and 0xFF) +
+                    0.587f * ((color shr 8) and 0xFF) +
+                    0.114f * (color and 0xFF)
+                if (luminance > 170f) light++
+                total++
+                x += step
+            }
+            y += step
+        }
+        return total > 0 && light.toFloat() / total > 0.6f
     }
 }

@@ -22,7 +22,9 @@ for file handling. No accounts, no network, no telemetry.
 - Offers six highlight colours and an opacity slider, yellow by default.
 - Shows a highlight panel for the current page, with colour swatches and delete.
 - Draws a reading progress bar.
-- Offers theme (system, light, dark) and font size settings.
+- Offers theme (system, light, dark), a text size slider for EPUB chapters, and
+  a Compatibility Mode that inverts a PDF or EPUB using black text on a white
+  page into white text on a black background.
 
 ## Requirements
 

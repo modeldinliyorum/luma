@@ -25,6 +25,9 @@ class SettingsStore(context: Context) {
         MutableStateFlow(prefs.getFloat(KEY_HIGHLIGHT_OPACITY, DEFAULT_HIGHLIGHT_OPACITY))
     val highlightOpacity: StateFlow<Float> = _highlightOpacity.asStateFlow()
 
+    private val _compatibilityMode = MutableStateFlow(prefs.getBoolean(KEY_COMPATIBILITY, false))
+    val compatibilityMode: StateFlow<Boolean> = _compatibilityMode.asStateFlow()
+
     fun setTheme(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME, mode.name).apply()
         _theme.value = mode
@@ -47,6 +50,11 @@ class SettingsStore(context: Context) {
         _highlightOpacity.value = clamped
     }
 
+    fun setCompatibilityMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_COMPATIBILITY, enabled).apply()
+        _compatibilityMode.value = enabled
+    }
+
     private fun loadTheme(): ThemeMode = runCatching {
         ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.SYSTEM.name)!!)
     }.getOrDefault(ThemeMode.SYSTEM)
@@ -57,6 +65,7 @@ class SettingsStore(context: Context) {
         private const val KEY_FONT_SCALE = "font_scale"
         private const val KEY_HIGHLIGHT_COLOR = "highlight_color"
         private const val KEY_HIGHLIGHT_OPACITY = "highlight_opacity"
+        private const val KEY_COMPATIBILITY = "compatibility_mode"
 
         const val DEFAULT_FONT_SCALE = 1.0f
         const val MIN_FONT_SCALE = 0.8f

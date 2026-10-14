@@ -101,6 +101,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
     val themeMode by container.settings.theme.collectAsState()
     val highlightRgb by container.settings.highlightColor.collectAsState()
     val highlightOpacity by container.settings.highlightOpacity.collectAsState()
+    val compatibility by container.settings.compatibilityMode.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val controllers = remember { mutableStateMapOf<Int, WebViewController>() }
@@ -240,6 +241,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                             highlights = ui.highlights.filter { it.pageNumber == page },
                             penMode = penMode,
                             color = highlightArgb,
+                            compatibility = compatibility,
                             ensureRendered = viewModel::ensurePageRendered,
                             onStroke = { points -> viewModel.addPenHighlight(points, highlightArgb) },
                             modifier = Modifier.fillMaxSize()
@@ -259,6 +261,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                     .map { HighlightMark(it.text, ReadingLogic.cssColor(it.color)) },
                                 fontScale = fontScale,
                                 dark = dark,
+                                compatibility = compatibility,
                                 onSwipe = { forward ->
                                     if (forward) viewModel.nextPage() else viewModel.previousPage()
                                 },

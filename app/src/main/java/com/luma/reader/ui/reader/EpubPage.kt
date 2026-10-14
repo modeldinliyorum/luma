@@ -24,24 +24,36 @@ private const val SELECTION_POLL_MS = 400L
 
 /**
  * Owns one chapter's WebView. It loads XHTML with the reader stylesheet
- * inlined, re-applies saved highlights, and reports the live text selection so
- * the host can offer a Highlight action while native Copy / Share / Select All
- * stay available.
+ * inlined, re-applies saved highlights, scales text with WebView text zoom,
+ * applies Compatibility Mode inversion, and reports the live text selection.
  */
 class WebViewController {
     var webView: WebView? = null
     var pendingMarks: List<HighlightMark> = emptyList()
+    private var pendingFontScale = 1f
+    private var pendingCompatibility = false
     var onPageLoaded: (() -> Unit)? = null
     private var loadedKey: String? = null
 
-    fun loadChapter(context: Context, file: File, fontScale: Float, dark: Boolean) {
-        val key = "${file.absolutePath}|$fontScale|$dark"
+    fun loadChapter(context: Context, file: File, dark: Boolean, compatibility: Boolean) {
+        pendingCompatibility = compatibility
+        val key = "${file.absolutePath}|$dark|$compatibility"
         if (key == loadedKey) return
         val web = webView ?: return
         loadedKey = key
-        val html = buildChapterHtml(context, file, fontScale, dark)
+        val html = buildChapterHtml(context, file, dark, compatibility)
         val baseUrl = file.parentFile?.toURI()?.toString() ?: "file:///"
         web.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null)
+    }
+
+    fun applyFontScale(scale: Float) {
+        pendingFontScale = scale
+        webView?.settings?.textZoom = (scale * 100f).toInt().coerceAtLeast(1)
+    }
+
+    fun applyCompatibility(enabled: Boolean) {
+        pendingCompatibility = enabled
+        webView?.evaluateJavascript("window.lumaApplyCompatibility($enabled);", null)
     }
 
     fun applyHighlights(marks: List<HighlightMark>) {
@@ -70,6 +82,12 @@ class WebViewController {
             null
         )
     }
+
+    internal fun applyPendingState() {
+        applyFontScale(pendingFontScale)
+        applyHighlights(pendingMarks)
+        applyCompatibility(pendingCompatibility)
+    }
 }
 
 @Composable
@@ -79,6 +97,7 @@ fun EpubChapterContent(
     marks: List<HighlightMark>,
     fontScale: Float,
     dark: Boolean,
+    compatibility: Boolean,
     onSwipe: (forward: Boolean) -> Unit,
     onSelectionText: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -93,7 +112,7 @@ fun EpubChapterContent(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         controller.webView = view
-                        controller.applyHighlights(controller.pendingMarks)
+                        controller.applyPendingState()
                         controller.onPageLoaded?.invoke()
                     }
                 }
@@ -103,10 +122,13 @@ fun EpubChapterContent(
         update = { it.swipeListener = onSwipe }
     )
 
-    LaunchedEffect(chapterFile, fontScale, dark) {
+    LaunchedEffect(chapterFile, dark, compatibility) {
         val file = chapterFile ?: return@LaunchedEffect
-        controller.loadChapter(context, file, fontScale, dark)
+        controller.loadChapter(context, file, dark, compatibility)
     }
+
+    // Font size is applied with WebView text zoom, so it updates without a reload.
+    LaunchedEffect(fontScale) { controller.applyFontScale(fontScale) }
 
     LaunchedEffect(marks) { controller.applyHighlights(marks) }
 
@@ -175,20 +197,27 @@ private fun sanitizeChapterHtml(html: String): String =
         .replace(scriptSelfClosing, "")
         .replace(eventHandlerAttribute, "")
 
-private fun buildChapterHtml(context: Context, file: File, fontScale: Float, dark: Boolean): String {
+private fun buildChapterHtml(context: Context, file: File, dark: Boolean, compatibility: Boolean): String {
     val raw = runCatching { file.readText(Charsets.UTF_8) }
         .getOrElse { "<html><body><p>This chapter could not be read.</p></body></html>" }
     val sanitized = sanitizeChapterHtml(raw)
     val css = readAsset(context, "reader.css")
     val js = readAsset(context, "reader.js")
-    val background = if (dark) "#0A0A0B" else "#FAFAF9"
-    val foreground = if (dark) "#E8E8EA" else "#141416"
-    val fontSize = (18 * fontScale).toInt()
+
+    // In Compatibility Mode the document keeps its own colours and is inverted
+    // only when it is dark text on a light page. Otherwise the theme wins.
+    val colourStyle = if (compatibility) {
+        "html.luma-compat{filter:invert(1) hue-rotate(180deg);}"
+    } else {
+        val background = if (dark) "#0A0A0B" else "#FAFAF9"
+        val foreground = if (dark) "#E8E8EA" else "#141416"
+        "html,body{background:$background;color:$foreground;}"
+    }
+
     val inject = buildString {
         append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=3.0\">")
         append("<style>").append(css).append("</style>")
-        append("<style>html,body{background:").append(background)
-            .append(";color:").append(foreground).append(";font-size:").append(fontSize).append("px;}</style>")
+        append("<style>html,body{font-size:18px;}").append(colourStyle).append("</style>")
         append("<script>").append(js).append("</script>")
     }
     val headEnd = Regex("</head>", RegexOption.IGNORE_CASE)

@@ -3,7 +3,6 @@ package com.luma.reader.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -14,6 +13,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -32,6 +32,7 @@ import com.luma.reader.data.ThemeMode
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val theme by container.settings.theme.collectAsState()
     val fontScale by container.settings.fontScale.collectAsState()
+    val compatibility by container.settings.compatibilityMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -78,10 +79,22 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     )
                     Text("A", fontSize = 24.sp)
                 }
-                Text(
-                    "${(fontScale * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.fillMaxWidth()
+                Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Compatibility mode", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Inverts a PDF or EPUB that uses black text on a white page so the " +
+                            "background becomes black and the text white.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = compatibility,
+                    onCheckedChange = { container.settings.setCompatibilityMode(it) }
                 )
             }
         }
