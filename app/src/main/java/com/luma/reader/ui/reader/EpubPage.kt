@@ -24,13 +24,12 @@ private const val SELECTION_POLL_MS = 400L
 
 /**
  * Owns one chapter's WebView. It loads XHTML with the reader stylesheet
- * inlined, re-applies saved highlights, scales text with WebView text zoom,
- * applies Compatibility Mode inversion, and reports the live text selection.
+ * inlined, re-applies saved highlights, applies Compatibility Mode inversion,
+ * and reports the live text selection.
  */
 class WebViewController {
     var webView: WebView? = null
     var pendingMarks: List<HighlightMark> = emptyList()
-    private var pendingFontScale = 1f
     private var pendingCompatibility = false
     var onPageLoaded: (() -> Unit)? = null
     private var loadedKey: String? = null
@@ -44,11 +43,6 @@ class WebViewController {
         val html = buildChapterHtml(context, file, dark, compatibility)
         val baseUrl = file.parentFile?.toURI()?.toString() ?: "file:///"
         web.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null)
-    }
-
-    fun applyFontScale(scale: Float) {
-        pendingFontScale = scale
-        webView?.settings?.textZoom = (scale * 100f).toInt().coerceAtLeast(1)
     }
 
     fun applyCompatibility(enabled: Boolean) {
@@ -84,7 +78,6 @@ class WebViewController {
     }
 
     internal fun applyPendingState() {
-        applyFontScale(pendingFontScale)
         applyHighlights(pendingMarks)
         applyCompatibility(pendingCompatibility)
     }
@@ -95,7 +88,6 @@ fun EpubChapterContent(
     controller: WebViewController,
     chapterFile: File?,
     marks: List<HighlightMark>,
-    fontScale: Float,
     dark: Boolean,
     compatibility: Boolean,
     onSwipe: (forward: Boolean) -> Unit,
@@ -126,9 +118,6 @@ fun EpubChapterContent(
         val file = chapterFile ?: return@LaunchedEffect
         controller.loadChapter(context, file, dark, compatibility)
     }
-
-    // Font size is applied with WebView text zoom, so it updates without a reload.
-    LaunchedEffect(fontScale) { controller.applyFontScale(fontScale) }
 
     LaunchedEffect(marks) { controller.applyHighlights(marks) }
 

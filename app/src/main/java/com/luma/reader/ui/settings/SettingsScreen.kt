@@ -12,7 +12,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -22,16 +21,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.luma.reader.AppContainer
-import com.luma.reader.data.SettingsStore
 import com.luma.reader.data.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val theme by container.settings.theme.collectAsState()
-    val fontScale by container.settings.fontScale.collectAsState()
     val compatibility by container.settings.compatibilityMode.collectAsState()
 
     Scaffold(
@@ -63,23 +59,6 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                         )
                     }
                 }
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Font size", style = MaterialTheme.typography.titleLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("A", fontSize = 14.sp)
-                    Slider(
-                        value = fontScale,
-                        onValueChange = { container.settings.setFontScale(it) },
-                        valueRange = SettingsStore.MIN_FONT_SCALE..SettingsStore.MAX_FONT_SCALE,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp)
-                    )
-                    Text("A", fontSize = 24.sp)
-                }
-                Text("${(fontScale * 100).toInt()}%", style = MaterialTheme.typography.bodyLarge)
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {

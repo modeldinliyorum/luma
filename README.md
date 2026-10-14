@@ -22,9 +22,9 @@ for file handling. No accounts, no network, no telemetry.
 - Offers six highlight colours and an opacity slider, yellow by default.
 - Shows a highlight panel for the current page, with colour swatches and delete.
 - Draws a reading progress bar.
-- Offers theme (system, light, dark), a text size slider for EPUB chapters, and
-  a Compatibility Mode that inverts a PDF or EPUB using black text on a white
-  page into white text on a black background.
+- Offers theme (system, light, dark) and a Compatibility Mode that inverts a
+  PDF or EPUB using black text on a white page into white text on a black
+  background.
 
 ## Requirements
 
@@ -101,7 +101,7 @@ app/src/main/java/com/luma/reader/
   ui/theme/               Color scheme and typography (dark first)
   ui/library/             Library list, import, empty state
   ui/reader/              Reader screen, PDF canvas, EPUB WebView, view model
-  ui/settings/            Theme and font size
+  ui/settings/            Theme and compatibility mode
   util/ReadingLogic.kt    Page validation, progress, duplicate detection
 app/src/main/assets/      reader.css and reader.js for EPUB chapters
 app/src/test/             Unit tests for ReadingLogic

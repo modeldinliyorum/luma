@@ -97,7 +97,6 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
 
     val ui by viewModel.ui.collectAsState()
     val bitmaps by viewModel.pageBitmaps.collectAsState()
-    val fontScale by container.settings.fontScale.collectAsState()
     val themeMode by container.settings.theme.collectAsState()
     val highlightRgb by container.settings.highlightColor.collectAsState()
     val highlightOpacity by container.settings.highlightOpacity.collectAsState()
@@ -259,7 +258,6 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                 marks = ui.highlights
                                     .filter { it.pageNumber == page && it.text.isNotBlank() }
                                     .map { HighlightMark(it.text, ReadingLogic.cssColor(it.color)) },
-                                fontScale = fontScale,
                                 dark = dark,
                                 compatibility = compatibility,
                                 onSwipe = { forward ->
