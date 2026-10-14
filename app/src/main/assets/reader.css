@@ -1,0 +1,45 @@
+/* Luma reader stylesheet. Inlined into each chapter by the app. */
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1.65;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 20px 20px 48px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: 100%;
+}
+
+img { max-width: 100%; height: auto; }
+a { color: inherit; }
+
+h1, h2, h3, h4 {
+    line-height: 1.25;
+    font-weight: 600;
+    margin: 1.4em 0 0.6em;
+}
+
+h1 { margin-top: 0; }
+
+p { margin: 0 0 1.1em; }
+
+blockquote {
+    margin: 1.2em 0;
+    padding-left: 1em;
+    border-left: 2px solid currentColor;
+    opacity: 0.85;
+}
+
+mark[data-luma] {
+    background: rgba(230, 195, 74, 0.45);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0;
+}

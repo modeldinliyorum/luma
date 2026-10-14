@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+      Half moon. The outer disc and the offset inner disc are combined with an
+      even-odd fill so the overlap is cut away, leaving a crescent that opens to
+      the upper right.
+    -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M26,54 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0 Z M39.66,48.34 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0 Z" />
+</vector>
