@@ -13,7 +13,7 @@ for file handling. No accounts, no network, no telemetry.
   WebView with a reader stylesheet.
 - Remembers the exact page you stopped on and restores it next launch.
 - Turns pages with a horizontal swipe and a smooth slide animation. Swiping
-  from left to right goes forward; right to left goes back. The arrow buttons
+  from right to left goes forward; left to right goes back. The arrow buttons
   do the same.
 - Activates highlighting on demand, never by default. PDFs get a pen toggle
   you switch on to draw freehand marks; EPUB text is highlighted from the

@@ -57,14 +57,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -84,7 +82,6 @@ import com.luma.reader.ui.theme.HighlightColorOptions
 import com.luma.reader.ui.theme.opaqueColor
 import com.luma.reader.util.ReadingLogic
 import kotlin.math.abs
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,9 +102,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
     val highlightRgb by container.settings.highlightColor.collectAsState()
     val highlightOpacity by container.settings.highlightOpacity.collectAsState()
 
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     val controllers = remember { mutableStateMapOf<Int, WebViewController>() }
     val dragAccum = remember { FloatArray(1) }
     val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
@@ -115,7 +110,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
     var penMode by remember { mutableStateOf(false) }
     var showColors by remember { mutableStateOf(false) }
     var showPanel by remember { mutableStateOf(false) }
-    var hasSelection by remember { mutableStateOf(false) }
+    var selectedText by remember { mutableStateOf("") }
 
     val highlightArgb = ReadingLogic.withOpacity(highlightRgb, highlightOpacity)
 
@@ -125,7 +120,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
         ThemeMode.DARK -> true
     }
 
-    LaunchedEffect(ui.page) { hasSelection = false }
+    LaunchedEffect(ui.page) { selectedText = "" }
 
     Scaffold(
         topBar = {
@@ -160,15 +155,11 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                 .background(opaqueColor(highlightRgb))
                         )
                     }
-                    if (ui.book?.format == BookFormat.EPUB && hasSelection) {
+                    if (ui.book?.format == BookFormat.EPUB && selectedText.isNotBlank()) {
                         IconButton(onClick = {
-                            controllers[ui.page]?.readSelection { text ->
-                                if (text.isBlank()) {
-                                    scope.launch { snackbarHostState.showSnackbar("Select text first") }
-                                } else {
-                                    viewModel.addEpubHighlight(text, highlightArgb)
-                                }
-                            }
+                            viewModel.addEpubHighlight(selectedText, highlightArgb)
+                            controllers[ui.page]?.clearSelection()
+                            selectedText = ""
                         }) {
                             Icon(Icons.Default.Check, contentDescription = "Highlight selection")
                         }
@@ -209,13 +200,15 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding)
                 .pointerInput(ui.book?.format, penMode) {
-                    val pdf = ui.book?.format == BookFormat.PDF
-                    if (pdf && penMode) return@pointerInput
+                    // Only PDFs need this: their canvas does not consume touches
+                    // when pen mode is off. EPUB swipes are read in the WebView.
+                    if (ui.book?.format != BookFormat.PDF || penMode) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { dragAccum[0] = 0f },
                         onDragEnd = {
-                            if (dragAccum[0] > swipeThreshold) viewModel.nextPage()
-                            else if (dragAccum[0] < -swipeThreshold) viewModel.previousPage()
+                            // Swipe left-to-right goes back; right-to-left goes forward.
+                            if (dragAccum[0] < -swipeThreshold) viewModel.nextPage()
+                            else if (dragAccum[0] > swipeThreshold) viewModel.previousPage()
                         }
                     ) { change, dragAmount ->
                         dragAccum[0] += dragAmount
@@ -233,8 +226,8 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                     transitionSpec = {
                         val forward = targetState > initialState
                         val spec = tween<IntOffset>(durationMillis = 280)
-                        val enter = slideInHorizontally(spec) { if (forward) -it else it } + fadeIn(tween(280))
-                        val exit = slideOutHorizontally(spec) { if (forward) it else -it } + fadeOut(tween(280))
+                        val enter = slideInHorizontally(spec) { if (forward) it else -it } + fadeIn(tween(280))
+                        val exit = slideOutHorizontally(spec) { if (forward) -it else it } + fadeOut(tween(280))
                         enter togetherWith exit
                     },
                     label = "page",
@@ -258,9 +251,6 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                 controllers[page] = controller
                                 onDispose { if (controllers[page] === controller) controllers.remove(page) }
                             }
-                            LaunchedEffect(controller) {
-                                controller.onSelectionChanged = { active -> hasSelection = active }
-                            }
                             EpubChapterContent(
                                 controller = controller,
                                 chapterFile = ui.epubChapters.getOrNull(page),
@@ -269,7 +259,10 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                     .map { HighlightMark(it.text, ReadingLogic.cssColor(it.color)) },
                                 fontScale = fontScale,
                                 dark = dark,
-                                onSwipe = { forward -> if (forward) viewModel.nextPage() else viewModel.previousPage() },
+                                onSwipe = { forward ->
+                                    if (forward) viewModel.nextPage() else viewModel.previousPage()
+                                },
+                                onSelectionText = { selectedText = it },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

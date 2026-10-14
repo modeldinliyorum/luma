@@ -2,9 +2,6 @@ package com.luma.reader.ui.reader
 
 import android.content.Context
 import android.graphics.Color as AndroidColor
-import android.view.ActionMode
-import android.view.Menu
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -15,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
 import kotlin.math.abs
+import kotlinx.coroutines.delay
 import org.json.JSONTokener
 
 /** A single text mark to re-apply inside a chapter. */
@@ -22,17 +20,18 @@ data class HighlightMark(val text: String, val cssColor: String)
 
 private const val SWIPE_MIN_DISTANCE_DP = 80f
 private const val SWIPE_MIN_VELOCITY = 0.2f
+private const val SELECTION_POLL_MS = 400L
 
 /**
- * Owns one chapter's WebView: loads XHTML with the reader stylesheet inlined,
- * re-applies saved highlights, reports selection state to Compose, and turns a
- * horizontal swipe into a page change without stealing touches from the WebView.
+ * Owns one chapter's WebView. It loads XHTML with the reader stylesheet
+ * inlined, re-applies saved highlights, and reports the live text selection so
+ * the host can offer a Highlight action while native Copy / Share / Select All
+ * stay available.
  */
 class WebViewController {
     var webView: WebView? = null
     var pendingMarks: List<HighlightMark> = emptyList()
     var onPageLoaded: (() -> Unit)? = null
-    var onSelectionChanged: ((Boolean) -> Unit)? = null
     private var loadedKey: String? = null
 
     fun loadChapter(context: Context, file: File, fontScale: Float, dark: Boolean) {
@@ -64,6 +63,13 @@ class WebViewController {
             onResult(text)
         }
     }
+
+    fun clearSelection() {
+        webView?.evaluateJavascript(
+            "window.getSelection && window.getSelection().removeAllRanges();",
+            null
+        )
+    }
 }
 
 @Composable
@@ -74,6 +80,7 @@ fun EpubChapterContent(
     fontScale: Float,
     dark: Boolean,
     onSwipe: (forward: Boolean) -> Unit,
+    onSelectionText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -82,34 +89,7 @@ fun EpubChapterContent(
         factory = { ctx ->
             LumaWebView(ctx).apply {
                 configureForReading()
-                selectionListener = { active -> controller.onSelectionChanged?.invoke(active) }
-
-                val minDistancePx = SWIPE_MIN_DISTANCE_DP * ctx.resources.displayMetrics.density
-                var downX = 0f
-                var downY = 0f
-                var downTime = 0L
-                setOnTouchListener { _, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            downX = event.x
-                            downY = event.y
-                            downTime = event.eventTime
-                        }
-
-                        MotionEvent.ACTION_UP -> {
-                            val dx = event.x - downX
-                            val dy = event.y - downY
-                            val elapsed = (event.eventTime - downTime).coerceAtLeast(1L)
-                            val horizontal = abs(dx) > abs(dy) * 1.5f
-                            if (abs(dx) > minDistancePx && horizontal && abs(dx) / elapsed > SWIPE_MIN_VELOCITY) {
-                                onSwipe(dx > 0)
-                            }
-                        }
-                    }
-                    // Observe only: returning false keeps scrolling and selection intact.
-                    false
-                }
-
+                swipeListener = onSwipe
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         controller.webView = view
@@ -119,7 +99,8 @@ fun EpubChapterContent(
                 }
                 controller.webView = this
             }
-        }
+        },
+        update = { it.swipeListener = onSwipe }
     )
 
     LaunchedEffect(chapterFile, fontScale, dark) {
@@ -128,13 +109,32 @@ fun EpubChapterContent(
     }
 
     LaunchedEffect(marks) { controller.applyHighlights(marks) }
+
+    // Track the live selection so the Highlight action appears for long-press
+    // selections and for Select All, and disappears when the selection clears.
+    LaunchedEffect(controller, chapterFile) {
+        if (chapterFile == null) return@LaunchedEffect
+        while (true) {
+            controller.readSelection { onSelectionText(it) }
+            delay(SELECTION_POLL_MS)
+        }
+    }
 }
 
-/** WebView that reports when the text-selection action mode starts and ends. */
+/**
+ * A WebView that observes horizontal swipes in onTouchEvent. It never consumes
+ * and never installs an OnTouchListener, so native scrolling, text selection,
+ * and the Copy / Share / Select All menu keep working.
+ */
 private class LumaWebView(context: Context) : WebView(context) {
-    var selectionListener: ((Boolean) -> Unit)? = null
+    var swipeListener: ((forward: Boolean) -> Unit)? = null
+    private var minDistancePx = 0f
+    private var downX = 0f
+    private var downY = 0f
+    private var downTime = 0L
 
     fun configureForReading() {
+        minDistancePx = SWIPE_MIN_DISTANCE_DP * resources.displayMetrics.density
         settings.javaScriptEnabled = true
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
@@ -142,31 +142,26 @@ private class LumaWebView(context: Context) : WebView(context) {
         setBackgroundColor(AndroidColor.TRANSPARENT)
     }
 
-    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
-        if (callback != null) selectionListener?.invoke(true)
-        return super.startActionMode(callback?.let { wrap(it) }, type)
-    }
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                downTime = event.eventTime
+            }
 
-    @Deprecated("Deprecated in Java")
-    override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
-        if (callback != null) selectionListener?.invoke(true)
-        return super.startActionMode(callback?.let { wrap(it) })
-    }
-
-    private fun wrap(callback: ActionMode.Callback) = object : ActionMode.Callback {
-        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
-            callback.onCreateActionMode(mode, menu)
-
-        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean =
-            callback.onPrepareActionMode(mode, menu)
-
-        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
-            callback.onActionItemClicked(mode, item)
-
-        override fun onDestroyActionMode(mode: ActionMode) {
-            callback.onDestroyActionMode(mode)
-            selectionListener?.invoke(false)
+            MotionEvent.ACTION_UP -> {
+                val dx = event.x - downX
+                val dy = event.y - downY
+                val elapsed = (event.eventTime - downTime).coerceAtLeast(1L)
+                val horizontal = abs(dx) > abs(dy) * 1.5f
+                if (abs(dx) > minDistancePx && horizontal && abs(dx) / elapsed > SWIPE_MIN_VELOCITY) {
+                    // Swiping right-to-left moves to the next page.
+                    swipeListener?.invoke(dx < 0)
+                }
+            }
         }
+        return super.onTouchEvent(event)
     }
 }
 
