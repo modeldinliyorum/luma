@@ -49,8 +49,8 @@ class ReaderViewModel(
     private val _ui = MutableStateFlow(ReaderUiState())
     val ui: StateFlow<ReaderUiState> = _ui.asStateFlow()
 
-    private val _pageBitmap = MutableStateFlow<Bitmap?>(null)
-    val pageBitmap: StateFlow<Bitmap?> = _pageBitmap.asStateFlow()
+    private val _pageBitmaps = MutableStateFlow<Map<Int, Bitmap>>(emptyMap())
+    val pageBitmaps: StateFlow<Map<Int, Bitmap>> = _pageBitmaps.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -75,7 +75,6 @@ class ReaderViewModel(
                     epubChapters = epub?.chapters?.map { chapter -> chapter.file }.orEmpty()
                 )
             }
-            if (book.format == BookFormat.PDF && count > 0) renderPdfPage(start)
             repository.observeHighlights(bookId).collect { marks ->
                 _ui.update { state -> state.copy(highlights = marks) }
             }
@@ -100,13 +99,15 @@ class ReaderViewModel(
         }
     }
 
-    private fun renderPdfPage(page: Int) {
+    /** Render a PDF page into the small LRU cache if it is not there yet. */
+    fun ensurePageRendered(page: Int) {
+        if (_pageBitmaps.value.containsKey(page)) return
         val pdf = renderer ?: return
+        if (pdf.pageCount == 0) return
         viewModelScope.launch {
             val bitmap = withContext(Dispatchers.IO) {
                 pdfLock.withLock {
                     runCatching {
-                        if (pdf.pageCount == 0) return@runCatching null
                         pdf.openPage(page.coerceIn(0, pdf.pageCount - 1)).use { pdfPage ->
                             val scale = PDF_RENDER_WIDTH.toFloat() / pdfPage.width.toFloat()
                             val height = (pdfPage.height * scale).toInt().coerceAtLeast(1)
@@ -117,10 +118,16 @@ class ReaderViewModel(
                         }
                     }.getOrNull()
                 }
+            } ?: return@launch
+
+            if (_pageBitmaps.value.containsKey(page)) return@launch
+            val updated = LinkedHashMap(_pageBitmaps.value)
+            updated[page] = bitmap
+            val keys = updated.keys.toList()
+            if (keys.size > MAX_CACHED_PAGES) {
+                keys.take(keys.size - MAX_CACHED_PAGES).forEach { updated.remove(it) }
             }
-            if (_ui.value.book?.format == BookFormat.PDF) {
-                _pageBitmap.value = bitmap
-            }
+            _pageBitmaps.value = updated
         }
     }
 
@@ -130,7 +137,6 @@ class ReaderViewModel(
         if (page == state.page) return
         _ui.update { it.copy(page = page) }
         val book = state.book ?: return
-        if (book.format == BookFormat.PDF) renderPdfPage(page)
         persistPosition(book, page, state.pageCount)
     }
 
@@ -149,33 +155,35 @@ class ReaderViewModel(
         }
     }
 
-    fun addPdfHighlight(rect: NormalizedRect) {
+    fun addPenHighlight(points: List<Pair<Float, Float>>, color: Int) {
         val state = _ui.value
         val book = state.book ?: return
         if (book.format != BookFormat.PDF) return
+        if (points.size < 2) return
+        val encoded = ReadingLogic.encodeStroke(points)
         viewModelScope.launch {
             repository.addHighlightIfNew(
                 Highlight(
                     bookId = book.id,
                     pageNumber = state.page,
                     text = "",
-                    rectLeft = rect.left,
-                    rectTop = rect.top,
-                    rectRight = rect.right,
-                    rectBottom = rect.bottom
+                    color = color,
+                    stroke = encoded
                 )
             )
         }
     }
 
-    fun addEpubHighlight(selectedText: String) {
+    fun addEpubHighlight(selectedText: String, color: Int) {
         val text = selectedText.trim()
         if (text.isEmpty()) return
         val state = _ui.value
         val book = state.book ?: return
         if (book.format != BookFormat.EPUB) return
         viewModelScope.launch {
-            repository.addHighlightIfNew(Highlight(bookId = book.id, pageNumber = state.page, text = text))
+            repository.addHighlightIfNew(
+                Highlight(bookId = book.id, pageNumber = state.page, text = text, color = color)
+            )
         }
     }
 
@@ -192,6 +200,7 @@ class ReaderViewModel(
     }
 
     companion object {
-        private const val PDF_RENDER_WIDTH = 1600
+        private const val PDF_RENDER_WIDTH = 1240
+        private const val MAX_CACHED_PAGES = 3
     }
 }

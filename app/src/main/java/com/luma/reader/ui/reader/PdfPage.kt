@@ -4,67 +4,87 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.PointF
+import android.graphics.Path
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.View
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.luma.reader.data.Highlight
-import com.luma.reader.ui.theme.HighlightMarkArgb
-import kotlin.math.hypot
-import kotlin.math.max
+import com.luma.reader.util.ReadingLogic
 import kotlin.math.min
 
-/** A rectangle expressed as fractions of the page (0..1), zoom independent. */
-data class NormalizedRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+@Composable
+fun PdfPageContent(
+    page: Int,
+    bitmaps: Map<Int, Bitmap>,
+    highlights: List<Highlight>,
+    penMode: Boolean,
+    color: Int,
+    ensureRendered: (Int) -> Unit,
+    onStroke: (List<Pair<Float, Float>>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LaunchedEffect(page) { ensureRendered(page) }
+    PdfPage(
+        bitmap = bitmaps[page],
+        highlights = highlights,
+        penMode = penMode,
+        color = color,
+        onStroke = onStroke,
+        modifier = modifier
+    )
+}
 
 @Composable
 fun PdfPage(
     bitmap: Bitmap?,
     highlights: List<Highlight>,
-    onHighlight: (NormalizedRect) -> Unit,
+    penMode: Boolean,
+    color: Int,
+    onStroke: (List<Pair<Float, Float>>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     AndroidView(
         modifier = modifier,
-        factory = { context -> PdfCanvasView(context).also { it.onHighlight = onHighlight } },
+        factory = { context -> PdfCanvasView(context).also { it.onStroke = onStroke } },
         update = { view ->
-            view.onHighlight = onHighlight
-            view.setContent(bitmap, highlights)
+            view.onStroke = onStroke
+            view.setContent(bitmap, highlights, penMode, color)
         }
     )
 }
 
 /**
- * Draws the current page bitmap and overlays translucent highlighter strokes.
- * A drag paints a pencil band; the released rectangle is reported as a
- * NormalizedRect so it survives zoom and relaunch.
+ * Draws the current page bitmap and overlays saved pen strokes. While pen mode
+ * is on a drag paints a freehand stroke and the touch is consumed. While it is
+ * off the view does not consume touches, so the pager swipe can change pages.
  */
 class PdfCanvasView(context: Context) : View(context) {
 
     private var bitmap: Bitmap? = null
     private var highlights: List<Highlight> = emptyList()
-    var onHighlight: ((NormalizedRect) -> Unit)? = null
+    private var penMode = false
+    private var strokeColor = 0xFFF5C518.toInt()
+    var onStroke: ((List<Pair<Float, Float>>) -> Unit)? = null
 
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-    private val markPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = HighlightMarkArgb
-        style = Paint.Style.FILL
-    }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFFE6C34A.toInt()
         style = Paint.Style.STROKE
-        strokeWidth = 3f
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = 12f * resources.displayMetrics.density
     }
     private val dest = RectF()
-    private var dragStart: PointF? = null
-    private var dragEnd: PointF? = null
+    private val live = mutableListOf<Pair<Float, Float>>()
 
-    fun setContent(newBitmap: Bitmap?, newHighlights: List<Highlight>) {
+    fun setContent(newBitmap: Bitmap?, newHighlights: List<Highlight>, pen: Boolean, color: Int) {
         bitmap = newBitmap
         highlights = newHighlights
+        penMode = pen
+        strokeColor = color
         invalidate()
     }
 
@@ -90,74 +110,64 @@ class PdfCanvasView(context: Context) : View(context) {
         computeDest()
         canvas.drawBitmap(bmp, null, dest, bitmapPaint)
 
-        highlights.forEach { mark ->
-            val left = mark.rectLeft ?: return@forEach
-            val top = mark.rectTop ?: return@forEach
-            val right = mark.rectRight ?: return@forEach
-            val bottom = mark.rectBottom ?: return@forEach
-            val rect = RectF(
-                dest.left + left * dest.width(),
-                dest.top + top * dest.height(),
-                dest.left + right * dest.width(),
-                dest.top + bottom * dest.height()
-            )
-            canvas.drawRoundRect(rect, 4f, 4f, markPaint)
+        highlights.forEach { highlight ->
+            val encoded = highlight.stroke
+            if (!encoded.isNullOrBlank()) {
+                val points = ReadingLogic.decodeStroke(encoded).map { toView(it.first, it.second) }
+                drawStroke(canvas, points, highlight.color, strokePaint)
+            }
         }
 
-        val start = dragStart
-        val end = dragEnd
-        if (start != null && end != null) {
-            val rect = RectF(min(start.x, end.x), min(start.y, end.y), max(start.x, end.x), max(start.y, end.y))
-            canvas.drawRoundRect(rect, 4f, 4f, markPaint)
-            canvas.drawRoundRect(rect, 4f, 4f, strokePaint)
+        if (live.size >= 2) {
+            drawStroke(canvas, live, strokeColor, strokePaint)
         }
     }
 
+    private fun drawStroke(canvas: Canvas, points: List<Pair<Float, Float>>, color: Int, paint: Paint) {
+        if (points.size < 2) return
+        paint.color = color
+        val path = Path()
+        path.moveTo(points[0].first, points[0].second)
+        for (i in 1 until points.size) path.lineTo(points[i].first, points[i].second)
+        canvas.drawPath(path, paint)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (bitmap == null) return false
+        if (bitmap == null || !penMode) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                dragStart = PointF(event.x, event.y)
-                dragEnd = dragStart
+                live.clear()
+                live.add(event.x to event.y)
                 invalidate()
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (dragStart != null) {
-                    dragEnd = PointF(event.x, event.y)
-                    invalidate()
-                }
+                live.add(event.x to event.y)
+                invalidate()
                 return true
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val start = dragStart
-                val end = dragEnd
-                dragStart = null
-                dragEnd = null
+                val points = live.toList()
+                live.clear()
                 invalidate()
-                if (start != null && end != null && hypot(end.x - start.x, end.y - start.y) > TOUCH_SLOP) {
-                    onHighlight?.invoke(toNormalized(start, end))
-                }
+                val normalized = points
+                    .filter { dest.contains(it.first, it.second) }
+                    .map { toNormalized(it.first, it.second) }
+                if (normalized.size >= 2) onStroke?.invoke(normalized)
                 return true
             }
         }
-        return super.onTouchEvent(event)
+        return true
     }
 
-    private fun toNormalized(a: PointF, b: PointF): NormalizedRect {
+    private fun toView(x: Float, y: Float): Pair<Float, Float> =
+        (dest.left + x * dest.width()) to (dest.top + y * dest.height())
+
+    private fun toNormalized(x: Float, y: Float): Pair<Float, Float> {
         val w = dest.width().coerceAtLeast(1f)
         val h = dest.height().coerceAtLeast(1f)
-        return NormalizedRect(
-            left = ((min(a.x, b.x) - dest.left) / w).coerceIn(0f, 1f),
-            top = ((min(a.y, b.y) - dest.top) / h).coerceIn(0f, 1f),
-            right = ((max(a.x, b.x) - dest.left) / w).coerceIn(0f, 1f),
-            bottom = ((max(a.y, b.y) - dest.top) / h).coerceIn(0f, 1f)
-        )
-    }
-
-    private companion object {
-        const val TOUCH_SLOP = 24f
+        return ((x - dest.left) / w).coerceIn(0f, 1f) to ((y - dest.top) / h).coerceIn(0f, 1f)
     }
 }

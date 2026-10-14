@@ -16,6 +16,21 @@ import com.luma.reader.data.ThemeMode
 /** Highlighter amber, shared by the EPUB marks and the PDF pencil overlay. */
 const val HighlightMarkArgb: Int = 0x59E6C34A
 
+/** The colours offered in the highlight picker. Yellow is the default. */
+data class HighlightColorOption(val label: String, val rgb: Int)
+
+val HighlightColorOptions = listOf(
+    HighlightColorOption("Yellow", 0xFFF5C518.toInt()),
+    HighlightColorOption("Green", 0xFF7BD88F.toInt()),
+    HighlightColorOption("Blue", 0xFF6FA8DC.toInt()),
+    HighlightColorOption("Pink", 0xFFF29CB5.toInt()),
+    HighlightColorOption("Orange", 0xFFF2A65A.toInt()),
+    HighlightColorOption("Purple", 0xFFB48EF5.toInt())
+)
+
+/** Force full opacity on an RGB colour so swatches stay visible. */
+fun opaqueColor(rgb: Int): Color = Color(0xFF000000.toInt() or rgb)
+
 /** Near-black ink and a single pale "moonlight" secondary keep it monochrome. */
 private val Night = Color(0xFF0A0A0B)
 private val NightSurface = Color(0xFF141417)

@@ -12,10 +12,16 @@ for file handling. No accounts, no network, no telemetry.
 - Renders PDF pages with the platform `PdfRenderer` and EPUB chapters in a
   WebView with a reader stylesheet.
 - Remembers the exact page you stopped on and restores it next launch.
-- Highlights with touch: drag a pencil band on a PDF, or select text and tap
-  highlight in an EPUB.
-- Shows a highlight panel for the current page, with delete.
-- Draws a reading progress bar and moves between pages.
+- Turns pages with a horizontal swipe and a smooth slide animation. Swiping
+  from left to right goes forward; right to left goes back. The arrow buttons
+  do the same.
+- Activates highlighting on demand, never by default. PDFs get a pen toggle
+  you switch on to draw freehand marks; EPUB text is highlighted from the
+  toolbar once you select it. Long-pressing EPUB text still shows the standard
+  Copy, Share and Select All options.
+- Offers six highlight colours and an opacity slider, yellow by default.
+- Shows a highlight panel for the current page, with colour swatches and delete.
+- Draws a reading progress bar.
 - Offers theme (system, light, dark) and font size settings.
 
 ## Requirements

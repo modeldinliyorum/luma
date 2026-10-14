@@ -2,23 +2,37 @@ package com.luma.reader.ui.reader
 
 import android.content.Context
 import android.graphics.Color as AndroidColor
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
+import android.view.MotionEvent
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
+import kotlin.math.abs
 import org.json.JSONTokener
 
+/** A single text mark to re-apply inside a chapter. */
+data class HighlightMark(val text: String, val cssColor: String)
+
+private const val SWIPE_MIN_DISTANCE_DP = 80f
+private const val SWIPE_MIN_VELOCITY = 0.2f
+
 /**
- * Owns the WebView used for EPUB chapters: loads chapter XHTML with the reader
- * stylesheet inlined, re-applies saved highlights after each load, and reports
- * the current text selection back to Compose.
+ * Owns one chapter's WebView: loads XHTML with the reader stylesheet inlined,
+ * re-applies saved highlights, reports selection state to Compose, and turns a
+ * horizontal swipe into a page change without stealing touches from the WebView.
  */
 class WebViewController {
     var webView: WebView? = null
-    var pendingHighlights: List<String> = emptyList()
+    var pendingMarks: List<HighlightMark> = emptyList()
     var onPageLoaded: (() -> Unit)? = null
+    var onSelectionChanged: ((Boolean) -> Unit)? = null
     private var loadedKey: String? = null
 
     fun loadChapter(context: Context, file: File, fontScale: Float, dark: Boolean) {
@@ -31,9 +45,11 @@ class WebViewController {
         web.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null)
     }
 
-    fun applyHighlights(texts: List<String>) {
-        pendingHighlights = texts
-        val json = texts.joinToString(separator = ",", prefix = "[", postfix = "]") { jsonString(it) }
+    fun applyHighlights(marks: List<HighlightMark>) {
+        pendingMarks = marks
+        val json = marks.joinToString(separator = ",", prefix = "[", postfix = "]") { mark ->
+            "{\"t\":${jsonString(mark.text)},\"c\":${jsonString(mark.cssColor)}}"
+        }
         webView?.evaluateJavascript("window.lumaSetHighlights($json);", null)
     }
 
@@ -51,20 +67,53 @@ class WebViewController {
 }
 
 @Composable
-fun EpubWebView(controller: WebViewController, modifier: Modifier = Modifier) {
+fun EpubChapterContent(
+    controller: WebViewController,
+    chapterFile: File?,
+    marks: List<HighlightMark>,
+    fontScale: Float,
+    dark: Boolean,
+    onSwipe: (forward: Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.loadWithOverviewMode = true
-                settings.useWideViewPort = true
-                settings.defaultTextEncodingName = "utf-8"
-                setBackgroundColor(AndroidColor.TRANSPARENT)
+        factory = { ctx ->
+            LumaWebView(ctx).apply {
+                configureForReading()
+                selectionListener = { active -> controller.onSelectionChanged?.invoke(active) }
+
+                val minDistancePx = SWIPE_MIN_DISTANCE_DP * ctx.resources.displayMetrics.density
+                var downX = 0f
+                var downY = 0f
+                var downTime = 0L
+                setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = event.x
+                            downY = event.y
+                            downTime = event.eventTime
+                        }
+
+                        MotionEvent.ACTION_UP -> {
+                            val dx = event.x - downX
+                            val dy = event.y - downY
+                            val elapsed = (event.eventTime - downTime).coerceAtLeast(1L)
+                            val horizontal = abs(dx) > abs(dy) * 1.5f
+                            if (abs(dx) > minDistancePx && horizontal && abs(dx) / elapsed > SWIPE_MIN_VELOCITY) {
+                                onSwipe(dx > 0)
+                            }
+                        }
+                    }
+                    // Observe only: returning false keeps scrolling and selection intact.
+                    false
+                }
+
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
                         controller.webView = view
-                        controller.applyHighlights(controller.pendingHighlights)
+                        controller.applyHighlights(controller.pendingMarks)
                         controller.onPageLoaded?.invoke()
                     }
                 }
@@ -72,11 +121,69 @@ fun EpubWebView(controller: WebViewController, modifier: Modifier = Modifier) {
             }
         }
     )
+
+    LaunchedEffect(chapterFile, fontScale, dark) {
+        val file = chapterFile ?: return@LaunchedEffect
+        controller.loadChapter(context, file, fontScale, dark)
+    }
+
+    LaunchedEffect(marks) { controller.applyHighlights(marks) }
 }
+
+/** WebView that reports when the text-selection action mode starts and ends. */
+private class LumaWebView(context: Context) : WebView(context) {
+    var selectionListener: ((Boolean) -> Unit)? = null
+
+    fun configureForReading() {
+        settings.javaScriptEnabled = true
+        settings.loadWithOverviewMode = true
+        settings.useWideViewPort = true
+        settings.defaultTextEncodingName = "utf-8"
+        setBackgroundColor(AndroidColor.TRANSPARENT)
+    }
+
+    override fun startActionMode(callback: ActionMode.Callback?, type: Int): ActionMode? {
+        if (callback != null) selectionListener?.invoke(true)
+        return super.startActionMode(callback?.let { wrap(it) }, type)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun startActionMode(callback: ActionMode.Callback?): ActionMode? {
+        if (callback != null) selectionListener?.invoke(true)
+        return super.startActionMode(callback?.let { wrap(it) })
+    }
+
+    private fun wrap(callback: ActionMode.Callback) = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
+            callback.onCreateActionMode(mode, menu)
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean =
+            callback.onPrepareActionMode(mode, menu)
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
+            callback.onActionItemClicked(mode, item)
+
+        override fun onDestroyActionMode(mode: ActionMode) {
+            callback.onDestroyActionMode(mode)
+            selectionListener?.invoke(false)
+        }
+    }
+}
+
+private val scriptBlock = Regex("(?is)<script\\b[^>]*>.*?</script>")
+private val scriptSelfClosing = Regex("(?is)<script\\b[^>]*/>")
+private val eventHandlerAttribute = Regex("(?i)\\son[a-z]+\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)")
+
+/** Strip author scripts and inline handlers so only our own script runs. */
+private fun sanitizeChapterHtml(html: String): String =
+    html.replace(scriptBlock, "")
+        .replace(scriptSelfClosing, "")
+        .replace(eventHandlerAttribute, "")
 
 private fun buildChapterHtml(context: Context, file: File, fontScale: Float, dark: Boolean): String {
     val raw = runCatching { file.readText(Charsets.UTF_8) }
         .getOrElse { "<html><body><p>This chapter could not be read.</p></body></html>" }
+    val sanitized = sanitizeChapterHtml(raw)
     val css = readAsset(context, "reader.css")
     val js = readAsset(context, "reader.js")
     val background = if (dark) "#0A0A0B" else "#FAFAF9"
@@ -90,10 +197,10 @@ private fun buildChapterHtml(context: Context, file: File, fontScale: Float, dar
         append("<script>").append(js).append("</script>")
     }
     val headEnd = Regex("</head>", RegexOption.IGNORE_CASE)
-    return if (headEnd.containsMatchIn(raw)) {
-        headEnd.replaceFirst(raw, inject + "</head>")
+    return if (headEnd.containsMatchIn(sanitized)) {
+        headEnd.replaceFirst(sanitized, inject + "</head>")
     } else {
-        inject + raw
+        inject + sanitized
     }
 }
 

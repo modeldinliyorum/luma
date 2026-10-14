@@ -7,6 +7,9 @@ import androidx.room.PrimaryKey
 
 enum class BookFormat { PDF, EPUB }
 
+/** Amber yellow at roughly 40% alpha. The default highlight colour. */
+const val DEFAULT_HIGHLIGHT_COLOR: Int = 0x66F5C518
+
 /**
  * Core spec: id, path, lastReadPosition, lastPageNumber.
  * Extras the UI needs: title (shown in the library and reader), format (chooses
@@ -26,8 +29,9 @@ data class Book(
 
 /**
  * Core spec: id, bookId, pageNumber, text, timestamp.
- * Extras so a mark can be redrawn after relaunch: EPUB stores character
- * offsets, PDF stores a normalized rectangle (0..1) for the pencil stroke.
+ * Extras so a mark can be redrawn after relaunch: `color` carries the chosen
+ * ARGB, EPUB text marks store character offsets, and PDF marks store a
+ * normalized freehand stroke path.
  */
 @Entity(
     tableName = "highlights",
@@ -47,6 +51,10 @@ data class Highlight(
     val pageNumber: Int,
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
+    /** ARGB including the chosen opacity. */
+    val color: Int = DEFAULT_HIGHLIGHT_COLOR,
+    /** Freehand pen stroke as normalized "x,y;x,y" pairs. Null for text marks. */
+    val stroke: String? = null,
     val startOffset: Int? = null,
     val endOffset: Int? = null,
     val rectLeft: Float? = null,

@@ -2,7 +2,9 @@
 (function () {
     if (window.lumaSetHighlights) return;
 
-    window.lumaSetHighlights = function (texts) {
+    var DEFAULT_COLOR = "rgba(245,197,24,0.400)";
+
+    window.lumaSetHighlights = function (marks) {
         try {
             document.querySelectorAll("mark[data-luma]").forEach(function (mark) {
                 var parent = mark.parentNode;
@@ -12,13 +14,15 @@
                 parent.normalize();
             });
 
-            if (!texts || !texts.length) return;
+            if (!marks || !marks.length) return;
 
             var nodes = [];
             var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
             while (walker.nextNode()) nodes.push(walker.currentNode);
 
-            texts.forEach(function (text) {
+            marks.forEach(function (item) {
+                var text = item && item.t;
+                var color = (item && item.c) || DEFAULT_COLOR;
                 if (!text) return;
                 for (var i = 0; i < nodes.length; i++) {
                     var node = nodes[i];
@@ -31,6 +35,9 @@
                     range.setEnd(node, index + text.length);
                     var mark = document.createElement("mark");
                     mark.setAttribute("data-luma", "1");
+                    mark.style.background = color;
+                    mark.style.color = "inherit";
+                    mark.style.borderRadius = "2px";
                     try {
                         range.surroundContents(mark);
                         nodes.splice(i, 1);

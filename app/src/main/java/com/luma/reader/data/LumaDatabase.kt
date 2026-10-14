@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [Book::class, Highlight::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class LumaDatabase : RoomDatabase() {

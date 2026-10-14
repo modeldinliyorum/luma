@@ -18,6 +18,13 @@ class SettingsStore(context: Context) {
     private val _fontScale = MutableStateFlow(prefs.getFloat(KEY_FONT_SCALE, DEFAULT_FONT_SCALE))
     val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
 
+    private val _highlightColor = MutableStateFlow(prefs.getInt(KEY_HIGHLIGHT_COLOR, DEFAULT_HIGHLIGHT_RGB))
+    val highlightColor: StateFlow<Int> = _highlightColor.asStateFlow()
+
+    private val _highlightOpacity =
+        MutableStateFlow(prefs.getFloat(KEY_HIGHLIGHT_OPACITY, DEFAULT_HIGHLIGHT_OPACITY))
+    val highlightOpacity: StateFlow<Float> = _highlightOpacity.asStateFlow()
+
     fun setTheme(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME, mode.name).apply()
         _theme.value = mode
@@ -29,6 +36,17 @@ class SettingsStore(context: Context) {
         _fontScale.value = clamped
     }
 
+    fun setHighlightColor(rgb: Int) {
+        prefs.edit().putInt(KEY_HIGHLIGHT_COLOR, rgb).apply()
+        _highlightColor.value = rgb
+    }
+
+    fun setHighlightOpacity(opacity: Float) {
+        val clamped = opacity.coerceIn(MIN_HIGHLIGHT_OPACITY, MAX_HIGHLIGHT_OPACITY)
+        prefs.edit().putFloat(KEY_HIGHLIGHT_OPACITY, clamped).apply()
+        _highlightOpacity.value = clamped
+    }
+
     private fun loadTheme(): ThemeMode = runCatching {
         ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.SYSTEM.name)!!)
     }.getOrDefault(ThemeMode.SYSTEM)
@@ -37,8 +55,16 @@ class SettingsStore(context: Context) {
         private const val PREFS = "luma_settings"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_FONT_SCALE = "font_scale"
+        private const val KEY_HIGHLIGHT_COLOR = "highlight_color"
+        private const val KEY_HIGHLIGHT_OPACITY = "highlight_opacity"
+
         const val DEFAULT_FONT_SCALE = 1.0f
         const val MIN_FONT_SCALE = 0.8f
         const val MAX_FONT_SCALE = 1.8f
+
+        const val DEFAULT_HIGHLIGHT_RGB = 0xF5C518
+        const val DEFAULT_HIGHLIGHT_OPACITY = 0.4f
+        const val MIN_HIGHLIGHT_OPACITY = 0.2f
+        const val MAX_HIGHLIGHT_OPACITY = 0.8f
     }
 }

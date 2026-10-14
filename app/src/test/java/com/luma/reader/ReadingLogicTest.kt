@@ -59,4 +59,42 @@ class ReadingLogicTest {
         assertTrue(ReadingLogic.isDuplicate(existing, duplicate))
         assertFalse(ReadingLogic.isDuplicate(existing, different))
     }
+
+    @Test
+    fun encodesAndDecodesStrokes() {
+        val points = listOf(0.1f to 0.2f, 0.5f to 0.6f, 0.9f to 0.4f)
+        val decoded = ReadingLogic.decodeStroke(ReadingLogic.encodeStroke(points))
+        assertEquals(3, decoded.size)
+        assertEquals(0.1f, decoded[0].first, 0.001f)
+        assertEquals(0.4f, decoded[2].second, 0.001f)
+        assertTrue(ReadingLogic.decodeStroke("").isEmpty())
+    }
+
+    @Test
+    fun detectsDuplicateStrokes() {
+        val stroke = ReadingLogic.encodeStroke(listOf(0.1f to 0.1f, 0.3f to 0.3f))
+        val existing = listOf(Highlight(bookId = 1, pageNumber = 0, text = "", stroke = stroke))
+        val duplicate = Highlight(bookId = 1, pageNumber = 0, text = "", stroke = stroke)
+        val different = Highlight(
+            bookId = 1,
+            pageNumber = 0,
+            text = "",
+            stroke = ReadingLogic.encodeStroke(listOf(0.4f to 0.4f, 0.6f to 0.6f))
+        )
+        assertTrue(ReadingLogic.isDuplicate(existing, duplicate))
+        assertFalse(ReadingLogic.isDuplicate(existing, different))
+    }
+
+    @Test
+    fun appliesOpacityToColour() {
+        val argb = ReadingLogic.withOpacity(0xF5C518, 0.5f)
+        assertEquals(127, (argb ushr 24) and 0xFF)
+        assertEquals(0xF5C518, ReadingLogic.rgbOf(argb))
+    }
+
+    @Test
+    fun buildsCssColour() {
+        val argb = ReadingLogic.withOpacity(0xF5C518, 0.4f)
+        assertEquals("rgba(245,197,24,0.400)", ReadingLogic.cssColor(argb))
+    }
 }
