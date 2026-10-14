@@ -91,7 +91,7 @@ private fun buildChapterHtml(context: Context, file: File, fontScale: Float, dar
     }
     val headEnd = Regex("</head>", RegexOption.IGNORE_CASE)
     return if (headEnd.containsMatchIn(raw)) {
-        raw.replaceFirst(headEnd) { inject + it.value }
+        headEnd.replaceFirst(raw, inject + "</head>")
     } else {
         inject + raw
     }
