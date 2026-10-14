@@ -1,0 +1,20 @@
+* text=auto
+
+# Keep shell and Kotlin sources LF so the Gradle wrapper runs on Linux CI.
+gradlew text eol=lf
+*.sh text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.xml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.properties text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+gradlew.bat text eol=crlf
+*.bat text eol=crlf
+
+*.jar binary
+*.epub binary
+*.apk binary
