@@ -111,6 +111,7 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
     var showColors by remember { mutableStateOf(false) }
     var showPanel by remember { mutableStateOf(false) }
     var selectedText by remember { mutableStateOf("") }
+    var pendingAnchor by remember { mutableStateOf<Pair<Int, String>?>(null) }
 
     val highlightArgb = ReadingLogic.withOpacity(highlightRgb, highlightOpacity)
 
@@ -252,18 +253,26 @@ fun ReaderScreen(container: AppContainer, onBack: () -> Unit) {
                                 controllers[page] = controller
                                 onDispose { if (controllers[page] === controller) controllers.remove(page) }
                             }
+                            val anchor = pendingAnchor?.takeIf { it.first == page }?.second
                             EpubChapterContent(
                                 controller = controller,
                                 chapterFile = ui.epubChapters.getOrNull(page),
+                                chapterFiles = ui.epubChapters,
                                 marks = ui.highlights
                                     .filter { it.pageNumber == page && it.text.isNotBlank() }
                                     .map { HighlightMark(it.text, ReadingLogic.cssColor(it.color)) },
                                 dark = dark,
                                 compatibility = compatibility,
+                                anchor = anchor,
                                 onSwipe = { forward ->
                                     if (forward) viewModel.nextPage() else viewModel.previousPage()
                                 },
                                 onSelectionText = { selectedText = it },
+                                onNavigateToChapter = { index, fragment ->
+                                    if (!fragment.isNullOrEmpty()) pendingAnchor = index to fragment
+                                    viewModel.goToPage(index)
+                                },
+                                onAnchorApplied = { pendingAnchor = null },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
